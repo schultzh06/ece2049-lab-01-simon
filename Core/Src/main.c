@@ -140,40 +140,61 @@ int main(void)
 
   /* USER CODE BEGIN 2 */
 
-  // Debugging tests. TODO: remove
+  // ---- LEDs ----
+  // LED1 (green): PC5; CN10-6
+  // LED2 (red): PB12; CN10-16
+  // LED3 (blue): PB13; CN10-30
+  // LED4 (yellow): PB8; CN10-36
+
+  // ---- Buttons ----
+  // BTN1 (green): PC11; CN7-2
+  // BTN2 (red): PC12; CN7-3
+  // BTN3 (blue): PC2; CN7-35
+  // BTN4 (yellow): PB0; CN7-34
 
   struct { GPIO_TypeDef *port; uint16_t pin; } leds[] = {
-    {GPIOC, GPIO_PIN_5}, {GPIOB, GPIO_PIN_12}, {GPIOB, GPIO_PIN_13}
+    {GPIOC, GPIO_PIN_5}, {GPIOB, GPIO_PIN_12}, {GPIOB, GPIO_PIN_13}, {GPIOB, GPIO_PIN_8}
   }, btns[] = {
-    {GPIOC, GPIO_PIN_11}, {GPIOC, GPIO_PIN_12}, {GPIOC, GPIO_PIN_2}
+    {GPIOC, GPIO_PIN_11}, {GPIOC, GPIO_PIN_12}, {GPIOC, GPIO_PIN_2}, {GPIOB, GPIO_PIN_0}
   };
 
-  __HAL_RCC_GPIOB_CLK_ENABLE();
-  __HAL_RCC_GPIOC_CLK_ENABLE();
+  // Enable GPIO port clocks
+  RCC->AHB2ENR |= RCC_AHB2ENR_GPIOBEN | RCC_AHB2ENR_GPIOCEN;
+  (void)RCC->AHB2ENR;
 
-  // Set up the LED pins as outputs
-  GPIO_InitTypeDef g = {0};
-  g.Mode = GPIO_MODE_OUTPUT_PP;
-  g.Pull = GPIO_NOPULL;
-  g.Speed = GPIO_SPEED_FREQ_LOW;
+  // ---- Init registers for LEDs ----
 
-  // GPIOC init (5)
-  g.Pin = GPIO_PIN_5;
-  HAL_GPIO_Init(GPIOC, &g);
-  
-  // GPIOC init (12 & 13)
-  g.Pin = GPIO_PIN_12 | GPIO_PIN_13;
-  HAL_GPIO_Init(GPIOB, &g);
+  // MODER: 0b01 = Output mode
+  GPIOC->MODER &= ~GPIO_MODER_MODE5; // Clear both bits
+  GPIOC->MODER |= GPIO_MODER_MODE5_0; // Set bit 0
+  GPIOB->MODER &= ~(GPIO_MODER_MODE12 | GPIO_MODER_MODE13 | GPIO_MODER_MODE8);
+  GPIOB->MODER |= (GPIO_MODER_MODE12_0 | GPIO_MODER_MODE13_0 | GPIO_MODER_MODE8_0);
 
-  // Set up the buttons as inputs
-  g.Mode = GPIO_MODE_INPUT;
-  g.Pull = GPIO_PULLUP;
+  // OTYPER: 0b0 = Push-pull
+  GPIOC->OTYPER &= ~GPIO_OTYPER_OT5;
+  GPIOB->OTYPER &= ~(GPIO_OTYPER_OT12 | GPIO_OTYPER_OT13 | GPIO_OTYPER_OT8);
 
-  // GPIOC init for inputs
-  g.Pin = GPIO_PIN_11 | GPIO_PIN_12 | GPIO_PIN_2;
-  HAL_GPIO_Init(GPIOC, &g);
+  // OSPEEDR: 0b00 = low speed
+  GPIOC->OSPEEDR &= ~GPIO_OSPEEDR_OSPEED5;
+  GPIOB->OSPEEDR &= ~(GPIO_OSPEEDR_OSPEED12 | GPIO_OSPEEDR_OSPEED13 | GPIO_OSPEEDR_OSPEED8);
 
-  for (int i = 0; i < 3; i++) {
+  // PUPDR: 0b00 = no pull up or down
+  GPIOC->PUPDR &= ~GPIO_PUPDR_PUPD5;
+  GPIOB->PUPDR &= ~(GPIO_PUPDR_PUPD12 | GPIO_PUPDR_PUPD13 | GPIO_PUPDR_PUPD8);
+
+  // ---- Init registers for Buttons ----
+
+  // MODER: 0b00 = Input
+  GPIOC->MODER &= ~(GPIO_MODER_MODE11 | GPIO_MODER_MODE12 | GPIO_MODER_MODE2);
+  GPIOB->MODER &= ~GPIO_MODER_MODE0;
+
+  // PUPDR: 0b01 = pull up
+  GPIOC->PUPDR &= ~(GPIO_PUPDR_PUPD11 | GPIO_PUPDR_PUPD12 | GPIO_PUPDR_PUPD2); // Clear
+  GPIOC->PUPDR |= (GPIO_PUPDR_PUPD11_0 | GPIO_PUPDR_PUPD12_0 | GPIO_PUPDR_PUPD2_0); // Set bit 0
+  GPIOB->PUPDR &= ~GPIO_PUPDR_PUPD0;
+  GPIOB->PUPDR |= GPIO_PUPDR_PUPD0_0; 
+
+  for (int i = 0; i < 4; i++) {
     HAL_GPIO_WritePin(leds[i].port, leds[i].pin, GPIO_PIN_SET);
     HAL_Delay(300);
     HAL_GPIO_WritePin(leds[i].port, leds[i].pin, GPIO_PIN_RESET);
@@ -269,13 +290,13 @@ int main(void)
 
     static uint8_t lastSnap = 0xFF;
     uint8_t snap = 0;
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 4; i++) {
       int pressed = (HAL_GPIO_ReadPin(btns[i].port, btns[i].pin) == GPIO_PIN_RESET); // If the buttons are pressed they are at 0 state (RESET)
       HAL_GPIO_WritePin(leds[i].port, leds[i].pin, pressed ? GPIO_PIN_SET : GPIO_PIN_RESET);
       snap |= pressed << i; // Store buttons state in snap in 3 least significant bits
     }
     if (snap != lastSnap) {
-      printf("BTN1=%d BTN2=%d BTN3=%d\n\r", snap & 1, (snap >> 1) & 1, (snap >> 2) & 1); // Print bit states from snap
+      printf("BTN1=%d BTN2=%d BTN3=%d BTN4=%d\n\r", snap & 1, (snap >> 1) & 1, (snap >> 2) & 1, (snap >> 3) & 1); // Print bit states from snap
       lastSnap = snap;
     }
 
