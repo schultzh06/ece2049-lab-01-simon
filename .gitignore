@@ -1,0 +1,11 @@
+.vscode/
+build
+mx.scratch
+!.settings
+# KiCad
+.history/
+*-backups/
+*.lck
+_autosave-*
+fp-info-cache
+*.kicad_prl
