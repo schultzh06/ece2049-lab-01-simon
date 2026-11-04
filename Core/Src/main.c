@@ -29,9 +29,11 @@
 #include "dwt_module.h"
 #include "Adafruit_TFTShield18_API.h"
 #include "Adafruit_ST7735_API.h"
+#include "stm32h533xx.h"
 #include "stm32h5xx_hal.h"
 
 #include "buzzer.h"
+#include "stm32h5xx_hal_gpio.h"
 #include "stm32h5xx_hal_tim.h"
 
 /* USER CODE END Includes */
@@ -135,7 +137,47 @@ int main(void)
   MX_SPI2_Init();
   MX_RNG_Init();
   MX_TIM1_Init();
+
   /* USER CODE BEGIN 2 */
+
+  // Debugging tests. TODO: remove
+
+  struct { GPIO_TypeDef *port; uint16_t pin; } leds[] = {
+    {GPIOC, GPIO_PIN_5}, {GPIOB, GPIO_PIN_12}, {GPIOB, GPIO_PIN_13}
+  }, btns[] = {
+    {GPIOC, GPIO_PIN_11}, {GPIOC, GPIO_PIN_12}, {GPIOC, GPIO_PIN_2}
+  };
+
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOC_CLK_ENABLE();
+
+  // Set up the LED pins as outputs
+  GPIO_InitTypeDef g = {0};
+  g.Mode = GPIO_MODE_OUTPUT_PP;
+  g.Pull = GPIO_NOPULL;
+  g.Speed = GPIO_SPEED_FREQ_LOW;
+
+  // GPIOC init (5)
+  g.Pin = GPIO_PIN_5;
+  HAL_GPIO_Init(GPIOC, &g);
+  
+  // GPIOC init (12 & 13)
+  g.Pin = GPIO_PIN_12 | GPIO_PIN_13;
+  HAL_GPIO_Init(GPIOB, &g);
+
+  // Set up the buttons as inputs
+  g.Mode = GPIO_MODE_INPUT;
+  g.Pull = GPIO_PULLUP;
+
+  // GPIOC init for inputs
+  g.Pin = GPIO_PIN_11 | GPIO_PIN_12 | GPIO_PIN_2;
+  HAL_GPIO_Init(GPIOC, &g);
+
+  for (int i = 0; i < 3; i++) {
+    HAL_GPIO_WritePin(leds[i].port, leds[i].pin, GPIO_PIN_SET);
+    HAL_Delay(300);
+    HAL_GPIO_WritePin(leds[i].port, leds[i].pin, GPIO_PIN_RESET);
+  }
 
   /* USER CODE END 2 */
 
@@ -222,6 +264,20 @@ int main(void)
   while (1)
   {
     /* Place application loop code here */
+
+    // Button debug. TODO: remove
+
+    static uint8_t lastSnap = 0xFF;
+    uint8_t snap = 0;
+    for (int i = 0; i < 3; i++) {
+      int pressed = (HAL_GPIO_ReadPin(btns[i].port, btns[i].pin) == GPIO_PIN_RESET); // If the buttons are pressed they are at 0 state (RESET)
+      HAL_GPIO_WritePin(leds[i].port, leds[i].pin, pressed ? GPIO_PIN_SET : GPIO_PIN_RESET);
+      snap |= pressed << i; // Store buttons state in snap in 3 least significant bits
+    }
+    if (snap != lastSnap) {
+      printf("BTN1=%d BTN2=%d BTN3=%d\n\r", snap & 1, (snap >> 1) & 1, (snap >> 2) & 1); // Print bit states from snap
+      lastSnap = snap;
+    }
 
     uint32_t buttons = TFTShield18_readButtons();
 
