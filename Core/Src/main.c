@@ -143,8 +143,6 @@ int main(void)
 
   /* USER CODE BEGIN 2 */
 
-  simon_io_init();
-  simon_init();
 
   /* USER CODE END 2 */
 
@@ -202,68 +200,14 @@ int main(void)
 
   /* Place extra user setup code here */
 
-  // BEGIN LAB 0 CODE
-
-  // Draw some extra shapes
-  // Screen is 160x128
-
-  // Fill circle
-  Display_fillEllipse(Display_width() / 2, Display_height() / 2, Display_width() / 2 - 10, Display_height() / 2 - 10, Display_color565(255, 0, 0));
-
-  // Box the text
-  Display_drawRoundRect(Display_width() / 2 - 40, Display_height() / 2 - 10, 80, 18, 3, ST7735_CYAN);
-
-  Display_setTextSize(1, 1);
-  Display_setTextColor(ST7735_WHITE);
-  Display_setCursor(Display_width() / 2 - 36, Display_height() / 2 - 5);
-  Display_print("Hello World! test");
-
-  // END LAB 0 CODE MODIFICATIONS
-
-  int32_t currNoteNum = 0;
-  int32_t currOctave = 1;
-
-  buzzerSetNote(&buzzer1, chromaticScale[currNoteNum], currOctave);
-  buzzerDisable(&buzzer1);
-
-  uint32_t lastButtonState = TFTSHIELD_BUTTON_ALL;
+  simon_io_init();
+  simon_init();
 
   while (1)
   {
     /* Place application loop code here */
 
     simon_update();
-
-    uint32_t buttons = TFTShield18_readButtons();
-
-    if(lastButtonState != buttons) {
-      if(!(buttons & TFTSHIELD_BUTTON_1)) {
-        if(buzzer1.currBuzzerState) buzzerDisable(&buzzer1);
-        else buzzerEnable(&buzzer1);
-      } else if(!(buttons & TFTSHIELD_BUTTON_UP)) {
-        currNoteNum++;
-        if (currNoteNum >= NUM_NOTES) {
-          currNoteNum %= NUM_NOTES;
-          currOctave++;
-        }
-
-        printf("Current Note Num: %d, Current Octave: %d\n", currNoteNum, currOctave);
-
-        buzzerSetNote(&buzzer1, chromaticScale[currNoteNum], currOctave);
-      } else if (!(buttons & TFTSHIELD_BUTTON_DOWN)) {
-        currNoteNum--;
-        if (currNoteNum < 0) {
-          currNoteNum = NUM_NOTES + currNoteNum;
-          currOctave--;
-        }
-
-        printf("Current Note Num: %d, Current Octave: %d\n", currNoteNum, currOctave);
-
-        buzzerSetNote(&buzzer1, chromaticScale[currNoteNum], currOctave);
-      }
-    }
-
-    lastButtonState = buttons;
 
     /* USER CODE END WHILE */
 
