@@ -37,6 +37,7 @@
 #include "stm32h5xx_hal_tim.h"
 
 #include "simon_io.h"
+#include "simon.h"
 
 /* USER CODE END Includes */
 
@@ -143,6 +144,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   simon_io_init();
+  simon_init();
 
   /* USER CODE END 2 */
 
@@ -229,6 +231,8 @@ int main(void)
   while (1)
   {
     /* Place application loop code here */
+
+    simon_update();
 
     uint32_t buttons = TFTShield18_readButtons();
 

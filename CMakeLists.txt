@@ -71,6 +71,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/dwt_module.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/buzzer.c
     ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/simon_io.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/Core/Src/simon.c
 )
 
 # Add include paths

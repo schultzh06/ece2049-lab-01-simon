@@ -22,6 +22,8 @@
 
 #include "simon_io.h"
 #include "main.h"
+#include "stm32h5xx_hal.h"
+#include <stdint.h>
 
 typedef struct { GPIO_TypeDef *port; uint16_t pin; } Pin;
 
@@ -88,8 +90,21 @@ void leds_all_off(void) {
 }
 
 int8_t button_get_press(void) {
+    static int8_t held = -1;
+    static uint32_t last_change = 0;
+
+    int8_t current = -1;
     for (int i = 0; i < NUM_COLORS; i++) {
-        if (!(btns[i].port->IDR & btns[i].pin)) return i; // pin reads 0 when pressed
+        if (!(btns[i].port->IDR & btns[i].pin)) {
+            current = i;
+            break;
+        }
     }
-    return -1;
+
+    if (current == held) return -1;
+    if (HAL_GetTick() - last_change < 20) return -1;
+
+    last_change = HAL_GetTick();
+    held = current;
+    return current;
 }
