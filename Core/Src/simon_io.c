@@ -21,9 +21,14 @@
  */
 
 #include "simon_io.h"
+#include "Adafruit_TFTShield18_Macros.h"
 #include "main.h"
 #include "stm32h5xx_hal.h"
 #include <stdint.h>
+#include <stdio.h>
+#include "Adafruit_TFTShield18_API.h"
+
+#define BTN_DEBOUNCE_MS 20
 
 typedef struct { GPIO_TypeDef *port; uint16_t pin; } Pin;
 
@@ -101,8 +106,13 @@ int8_t button_get_press(void) {
         }
     }
 
+    uint32_t select = !(TFTShield18_readButtons() & TFTSHIELD_BUTTON_IN);
+    if (select) {
+        current = NUM_COLORS;
+    }
+
     if (current == held) return -1;
-    if (HAL_GetTick() - last_change < 20) return -1;
+    if (HAL_GetTick() - last_change < BTN_DEBOUNCE_MS) return -1;
 
     last_change = HAL_GetTick();
     held = current;

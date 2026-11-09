@@ -71,7 +71,7 @@ static void change_state(SimonState next) {
     state = next;
 
     switch(next) {
-        case STATE_START: draw_screen("Press Start", ST77XX_WHITE, ST7735_BLACK); break;
+        case STATE_START: draw_screen("Simon Says Press SELECT!", ST77XX_WHITE, ST7735_BLACK); break;
         case STATE_SHOW_SEQUENCE: draw_screen("Watch...", ST77XX_BLACK, ST7735_YELLOW); break;
         case STATE_WAIT_INPUT: draw_screen("Your Turn!", ST77XX_BLACK, ST7735_GREEN); break;
         case STATE_GAME_OVER: draw_screen("Game Over.", ST77XX_WHITE, ST7735_RED); break;
@@ -90,14 +90,33 @@ static void new_game(void) {
     change_state(STATE_SHOW_SEQUENCE);
 }
 
-static void state_start(void) {
-    int8_t press = button_get_press();
-    if (press != -1) {
-        new_game();
+static void state_start(int8_t press) {
+    static bool starting = false;
+    static int8_t count = 4;
+
+    if (press == NUM_COLORS) {
+        starting = true;
+        last_tick = HAL_GetTick();
+        leds_all_off();
         return;
     }
 
-    if (HAL_GetTick() - last_tick >= FLASH_ON_MS) {
+    if (starting) {
+        if (HAL_GetTick() - last_tick < 3000) {
+            char str[12];
+            sprintf(str, "%d", 3 - ((HAL_GetTick() - last_tick) / 1000));
+
+            if (3 - ((HAL_GetTick() - last_tick) / 1000) != count) {
+                count = 3 - ((HAL_GetTick() - last_tick) / 1000);
+                draw_screen(str, ST77XX_CYAN, ST77XX_BLACK);
+            }
+        } else {
+            starting = false;
+            count = 4;
+            new_game();
+            change_state(STATE_SHOW_SEQUENCE);
+        }
+    } else if (HAL_GetTick() - last_tick >= FLASH_ON_MS) {
         color_off((uint8_t)lit_color);
         if (++lit_color >= NUM_COLORS) lit_color = 0;
         color_on((uint8_t)lit_color);
@@ -105,8 +124,8 @@ static void state_start(void) {
     }
 }
 
-static void state_game_over(void) {
-    if (button_get_press() != -1) {
+static void state_game_over(int8_t press) {
+    if (press != -1) {
         lit_color = 0;
         color_on(0);
         last_tick = HAL_GetTick();
@@ -134,7 +153,7 @@ static void state_show_sequence(void) {
     }
 }
 
-static void state_wait_input(void) {
+static void state_wait_input(int8_t press) {
     if (lit_color != -1) {
         if (HAL_GetTick() - last_tick < PRESS_FLASH_MS) return;
         color_off(lit_color);
@@ -156,7 +175,6 @@ static void state_wait_input(void) {
         return;
     }
 
-    int8_t press = button_get_press();
     if (press == -1) return;
 
     if (press != sequence[seq_index]) {
@@ -185,10 +203,23 @@ void simon_init(void) {
 }
 
 void simon_update(void) {
+
+    int8_t press = button_get_press();
+
+    if (state != STATE_START && press == NUM_COLORS) {
+        leds_all_off();
+        lit_color = 0;
+        color_on(0);
+        last_tick = HAL_GetTick();
+        buzzerDisable(&buzzer1);
+        change_state(STATE_START);
+        return;
+    }
+
     switch (state) {
-        case STATE_START: state_start(); break;
+        case STATE_START: state_start(press); break;
         case STATE_SHOW_SEQUENCE: state_show_sequence(); break;
-        case STATE_GAME_OVER: state_game_over(); break;
-        case STATE_WAIT_INPUT: state_wait_input(); break;
+        case STATE_GAME_OVER: state_game_over(press); break;
+        case STATE_WAIT_INPUT: state_wait_input(press); break;
     }
 }
