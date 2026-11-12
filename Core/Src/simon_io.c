@@ -1,6 +1,6 @@
 /**
  * @file simon_io.c
- * @author Hayden Schultz
+ * @author Hayden Schultz, Frank Santen
  * @brief Hardware layer for Simon Says game.
  * @date 2026-11-04
  * 

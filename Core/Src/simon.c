@@ -1,3 +1,21 @@
+/**
+ * @file simon.c
+ * @author Hayden Schultz, Frank Santen
+ * @brief Game logic and TFT display for Simon Says.
+ * @date 2026-11-12
+ * 
+ * Runs simon as a non blocking state machine. simon_update() is called every pass of the main loop.
+ * reads one button press, and dispatches to the handler for the current state. Timing uses HAL_GetTick()
+ * so the loop does not block.
+ * 
+ * States
+ *   START: Menu, idle LED animation, SELECT starts a 3-2-1 countdown
+ *   SHOW_SEQUENCE: Plays sequence on LEDs, buzzer, and on screen display
+ *   WAIT_INPUT: Records and checks each button press
+ *   GAME_OVER: Shows high scores, waits for SELECT (or 10s)
+ *   CORRECT: Flashes all lights to show the player was corect
+ */
+ 
 #include "simon.h"
 #include "Adafruit_ST77xx_Macros.h"
 #include "main.h"
@@ -13,28 +31,26 @@
 #include "Adafruit_ST7735_Macros.h"
 #include <string.h>
 
+/** Game timing and sequence limit */
 #define MAX_SEQUENCE 100
 #define FLASH_ON_MS 500
 #define FLASH_OFF_MS 200
 #define PRESS_FLASH_MS 300
 
-#define TEXT_SIZE 2
-#define CHAR_W (6 * TEXT_SIZE)
-#define CHAR_H (8 * TEXT_SIZE)
-#define CIRCLE_R 10
-#define CIRCLE_Y (Display_height() - CIRCLE_R - 4)
-
+/** History: HIST_MAX circles centered at the bottom of the screen */
 #define HIST_R 7
 #define HIST_SP 18
 #define HIST_Y 119
 #define HIST_MAX 5
 
+/** Status bar along top of screen */
 #define BAR_H (Display_height() / 5)
 #define BAR_PAD 4
 
 extern Buzzer buzzer1;
 extern RNG_HandleTypeDef hrng;
 
+/** Game states, see file header */
 typedef enum {
     STATE_START,
     STATE_SHOW_SEQUENCE,
@@ -43,21 +59,35 @@ typedef enum {
     STATE_CORRECT
 } SimonState;
 
-static SimonState state = STATE_START;
+static SimonState state = STATE_START; // Current state
+
+/*
+ * Sequence and history
+ * sequence[] holds the colors the game generated, history[] holds
+ * the colors the player actually pressed this level. Both use the same index,
+ * so press in is correct when history[n] == sequence[n].
+*/
 static uint8_t sequence[MAX_SEQUENCE];
 static uint8_t seq_length = 0;
 static uint8_t seq_index = 0;
 static uint8_t history[MAX_SEQUENCE];
 static uint8_t history_len = 0;
-static bool led_lit = false;
-static uint32_t last_tick;
-static int8_t lit_color = -1;
+
+static bool led_lit = false; // Is a sequence color currently lit
+static uint32_t last_tick; // timestamp for active state's timer
+static int8_t lit_color = -1; // Color lit by press or animation, -1 if none
 
 static uint8_t high_scores[3] = {0, 0, 0};
 
+/** Buzzer note and screen color for each button, 0-3 */
 static const Note color_notes[NUM_COLORS] = {NOTE_C, NOTE_E, NOTE_G, NOTE_A};
 static const uint16_t circle_colors[NUM_COLORS] = {ST77XX_GREEN, ST77XX_RED, ST77XX_BLUE, ST77XX_YELLOW};
 
+/**
+ * @brief Light one color on the LED, screen, and buzzer.
+ * 
+ * @param i Color index, 0 to NUM_COLORS - 1
+*/
 static void color_on(uint8_t i) {
     led_set(i, true);
     Display_fillRoundRect(42 + (i > 0 && i < 3 ? 40 : 0), (i > 1 ? 68 : 28), 36, 36, 5, circle_colors[i]);
@@ -65,12 +95,22 @@ static void color_on(uint8_t i) {
     buzzerEnable(&buzzer1);
 }
 
+/**
+ * @brief Turn off one color on the LED, screen, and buzzer.
+ * 
+ * @param i Color index, 0 to NUM_COLORS - 1
+*/
 static void color_off(uint8_t i) {
     led_set(i, false);
     Display_fillRoundRect(42 + (i > 0 && i < 3 ? 40 : 0), (i > 1 ? 68 : 28), 36, 36, 5, ST77XX_WHITE);
     buzzerDisable(&buzzer1);
 }
 
+/**
+ * @brief Append one random color to the sequence using RNG
+ * 
+ * If the RNG fails the sequence is unchanged
+*/
 static void add_random_color(void) {
     uint32_t random;
     if (HAL_RNG_GenerateRandomNumber(&hrng, &random) == HAL_OK) {
@@ -79,6 +119,11 @@ static void add_random_color(void) {
     }
 }
 
+/**
+ * @brief Draw the last HIST_MAX presses as colored circles.
+ * 
+ * Slots are fixed and centered, so the newest press is rightmost
+*/
 static void draw_history(void) {
     uint8_t start = (history_len > 5) ? history_len - 5 : 0;
     for (uint8_t i = start; i < history_len; i++) {
@@ -88,6 +133,9 @@ static void draw_history(void) {
     }
 }
 
+/**
+ * @brief Blank all HIST_MAX history slots
+*/
 static void clear_history(void) {
     for (uint8_t i = 0; i < HIST_MAX; i++) {
         int16_t x0 = (Display_width() - 4 * HIST_SP) / 2;
@@ -96,6 +144,15 @@ static void clear_history(void) {
     }
 }
 
+/**
+ * @brief Redraw the top status bar.
+ * 
+ * Shows the current level left aligned and msg right aligned
+ * 
+ * @param msg Single-line message
+ * @param text_color Text color
+ * @param bar_color Bar background color
+*/
 static void draw_status(const char *msg, uint16_t text_color, uint16_t bar_color) {
     Display_fillRect(0, 0, Display_width(), BAR_H, bar_color);
     Display_setTextColor(text_color);
@@ -112,7 +169,14 @@ static void draw_status(const char *msg, uint16_t text_color, uint16_t bar_color
     Display_print(msg);
 }
 
-static void draw_screen(char* msg) {
+/**
+ * @brief Clear the screen and draw the base layout
+ * 
+ * Draws the status bar background, four light pads, and msg centered above bottom edge
+ * 
+ * @param msg Single-line message, empty string for none
+*/
+static void draw_screen(const char *msg) {
     Display_fillScreen(ST77XX_BLACK);
     Display_fillRect(0, 0, Display_width(), Display_height() / 5, ST77XX_RED);
     
@@ -128,6 +192,11 @@ static void draw_screen(char* msg) {
     Display_print(msg);
 }
 
+/**
+ * @brief Switch to a new state and draw that state's screen.
+ * 
+ * @param next State to enter
+*/
 static void change_state(SimonState next) {
     state = next;
 
@@ -149,6 +218,9 @@ static void change_state(SimonState next) {
     }
 }
 
+/**
+ * @brief Reset game data, draw the game screen, and start level 1
+*/
 static void new_game(void) {
     leds_all_off();
     draw_screen("");
@@ -167,6 +239,11 @@ static void new_game(void) {
     change_state(STATE_SHOW_SEQUENCE);
 }
 
+/**
+ * @brief START state: idle animation, SELECT starts countdown to game
+ * 
+ * @param press Button index from button_get_press(), NUM_COLORS is SELECT
+*/
 static void state_start(int8_t press) {
     static bool starting = false;
     static int8_t count = 4;
@@ -213,11 +290,17 @@ static void state_start(int8_t press) {
     }
 }
 
+/**
+ * @brief GAME_OVER state: random LED animation until SELECT is pressed or 10s goes by
+ * 
+ * @param press Button index from button_get_press(), NUM_COLORS is SELECT
+*/
 static void state_game_over(int8_t press) {
 
     static uint8_t lit = 0;
+    static uint32_t total = 0;
 
-    if (press == 4) {
+    if (press == 4 || total > 10000) {
         lit_color = 0;
         color_on(0);
         last_tick = HAL_GetTick();
@@ -229,6 +312,7 @@ static void state_game_over(int8_t press) {
     uint32_t elapsed = HAL_GetTick() - last_tick;
         
     if (elapsed >= 100) {
+        total += elapsed;
         color_off(lit);
         if (HAL_RNG_GenerateRandomNumber(&hrng, &random) == HAL_OK) {
             lit = random % NUM_COLORS;
@@ -239,6 +323,11 @@ static void state_game_over(int8_t press) {
 
 }
 
+/**
+ * @brief SHOW_SEQUENCE state: play the sequence one color at a time.
+ * 
+ * Goes to WAIT_INPUT after the last color
+*/
 static void state_show_sequence(void) {
     uint32_t elapsed = HAL_GetTick() - last_tick;
 
@@ -260,6 +349,14 @@ static void state_show_sequence(void) {
     }
 }
 
+/**
+ * @brief WAIT_INPUT state: record, display, and check each press
+ * 
+ * Adds each press to history[] and compared it with sequence[]. Mismatch
+ * updates high scores and goes to GAME_OVER. A full correct sequence goes to CORRECT.
+ * 
+ * @param press Button index from button_get_press(), NUM_COLORS is SELECT, -1 is none
+*/
 static void state_wait_input(int8_t press) {
     if (lit_color != -1) {
         if (HAL_GetTick() - last_tick < PRESS_FLASH_MS) return;
@@ -294,6 +391,7 @@ static void state_wait_input(int8_t press) {
         }
         if (score_index >= 0) high_scores[score_index] = seq_length;
 
+        last_tick = HAL_GetTick();
         change_state(STATE_GAME_OVER);
         return;
     }
@@ -305,6 +403,9 @@ static void state_wait_input(int8_t press) {
 
 }
 
+/**
+ * @brief CORRECT state: flash all colors, then add a color and continue.
+*/
 void state_correct(void) {
     static int count = 0;
     static bool lit = false;
