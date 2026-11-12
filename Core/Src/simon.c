@@ -305,6 +305,7 @@ static void state_game_over(int8_t press) {
         color_on(0);
         last_tick = HAL_GetTick();
         change_state(STATE_START);
+        total = 0;
         return;
     }
 
